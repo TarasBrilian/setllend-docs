@@ -1,0 +1,112 @@
+---
+title: Collateral and health
+description: Which tokens back a Setllend loan, how much you can borrow against them, and how the health factor decides when a loan can be liquidated.
+---
+
+import HealthCalculator from '@site/src/components/calculators/HealthCalculator';
+
+Every Setllend loan is over-collateralized. A borrower locks collateral tokens in the contract, and two numbers derived from that collateral govern the loan: **max LTV** limits how much the borrower can owe, and the **health factor** says when the loan can be [liquidated](./liquidation.mdx). Both are checked against the **debt face**, the principal plus all the fixed interest to maturity, not just the principal.
+
+## Collateral tokens
+
+The contract owner keeps a list of accepted collateral tokens, each with its own oracle feed and risk parameters. The list today:
+
+| Token | Intents asset ID | Decimals | Max LTV | Liquidation threshold | Liquidation bonus |
+|---|---|---|---|---|---|
+| ETH (from Arbitrum) | `nep141:arb.omft.near` | 18 | 70% | 80% | 5% |
+| ETH (from Base) | `nep141:base.omft.near` | 18 | 70% | 80% | 5% |
+| NEAR (wrapped) | `nep141:wrap.near` | 24 | 70% | 80% | 5% |
+
+Both ETH tokens are priced with the same ETH/USD feed. The full parameter list, and how to read it from the contract yourself, is on [Risk parameters](../reference/risk-parameters.md).
+
+## One loan per maturity
+
+A borrower has at most one loan per [maturity](./maturities.md). The loan holds every collateral token the borrower put into it, and its debt face is the sum of all their `borrow` fills in that maturity. Loans in different maturities are separate: collateral in one never backs debt in another.
+
+Tokens you deposit into your Intents balance are **not** collateral yet. They become collateral when you escrow them in a `borrow` order and that order fills, or when you move them into a loan that has debt with `add_collateral`.
+
+## Two checks: max LTV and liquidation threshold
+
+**Max LTV** (loan to value) is the borrowing limit. A `borrow` fill, or a collateral withdrawal while the loan has debt, is allowed only if afterwards:
+
+```
+Σ collateral_value × max_ltv  ≥  debt_value          (tokens that aren't frozen)
+```
+
+**Liquidation threshold** is the point where the loan can be liquidated. The **health factor** is:
+
+```
+health_factor = Σ collateral_value × liq_threshold / debt_value     (every token)
+```
+
+A loan with debt is liquidatable when its health factor is **below 1**, or when it is still unpaid one hour after maturity (see [Liquidation](./liquidation.mdx)). The 10-point gap between 70% and 80% is the room a loan has before it can be liquidated: from a loan opened at exactly max LTV, collateral must lose 12.5% of its value before the health factor reaches 1.
+
+Because both checks use the debt face, max LTV is slightly stricter than it looks: the interest to maturity counts against the limit from the start.
+
+## Conservative prices
+
+Prices come from the [oracle](./oracle.md) as a price and a confidence interval `conf`, an estimate of how far the true price may be from the reported one. For both checks the contract assumes the worse end of the range:
+
+```
+collateral_value = amount × (price − conf)          for each token
+debt_value       = debt_face × (USDC price + conf)
+```
+
+So the numbers the contract uses are a little lower for collateral and a little higher for debt than the prices you see quoted. With ETH at $2,260.00 and a conf of $2.50 (about 0.11%, a typical value), and USDC at $1.0000 with a conf of $0.0014, 0.5 ETH against 500 USDC of debt face has a health factor of:
+
+- at mid prices: 0.5 × 2,260 × 0.80 / 500 = **1.808**
+- at conservative prices: 0.5 × 2,257.50 × 0.80 / (500 × 1.0014) = **1.803**
+
+The contract compares these sums exactly, as integers, with no rounding. The health factor the app shows is computed the same conservative way from the same oracle prices, so a value below 1.00 means the loan can be liquidated at those prices. Without debt, a loan has no health factor.
+
+## When each check runs
+
+| Action | Price needed | Check |
+|---|---|---|
+| A `borrow` fill | Yes | The whole loan, after the fill, meets max LTV. Otherwise the fill is skipped (`cannot_open`) |
+| Withdraw collateral, loan has debt | Yes | The loan, after the withdrawal, meets max LTV, and it is before maturity + 1 hour. Otherwise `Withdrawal exceeds max LTV` or `Debt is overdue` |
+| Withdraw collateral, loan has no debt | No | None; the collateral is paid out at once |
+| Add collateral | No | The loan must have debt, and it must be before maturity + 1 hour. It only raises health |
+| Repay | No | None |
+| Liquidate | Yes | Health factor below 1, or unpaid at maturity + 1 hour |
+
+## Frozen tokens
+
+The owner can **freeze** a collateral token, for example if its market or bridge becomes unsafe. A frozen token:
+
+- can't be escrowed in a new `borrow` order or added to a loan;
+- gives **no borrowing power**: the max LTV check leaves it out, so it can't support new borrowing or a withdrawal of other collateral;
+- still **counts toward health** at its liquidation threshold, so a freeze never makes a loan liquidatable by itself.
+
+Open loans that hold a frozen token run on until they are repaid, withdrawn, or liquidated. This is how Aave v3 freezes a reserve.
+
+## Worked example
+
+Borrow **1,000 USDC for 21 days at 8% APR**, with ETH at $2,260:
+
+1. Debt face = 1,000 × (1 + 0.08 × 21 / 365) ≈ **1,004.60 USDC**.
+2. Minimum collateral at 70% max LTV = 1,004.60 / 0.70 ≈ $1,435.15, which is about **0.635 ETH**, plus a little for the price's conf.
+
+The other way round, with **0.05 ETH** ($113) as collateral, the most the loan can owe is 113 × 0.70 = $79.10 of debt face, which at the same terms is a principal of about **78.74 USDC**.
+
+A loan with 70 USDC of debt face on 0.05 ETH has a health factor of 0.05 × 2,260 × 0.80 / 70 ≈ **1.29**. It reaches 1 when 0.05 ETH is worth 70 / 0.80 = $87.50, which is ETH at about **$1,750**, a drop of about 22.6%. The [Liquidation](./liquidation.mdx) page follows this loan through a liquidation.
+
+**Several tokens.** A loan with 0.5 ETH at $2,260 ($1,130) and 200 NEAR at $2.50 ($500) holds $1,630 of collateral. Its borrowing power is 1,130 × 0.70 + 500 × 0.70 = $1,141 of debt face. With 900 USDC of debt face its health factor is (1,130 × 0.80 + 500 × 0.80) / 900 ≈ **1.45**.
+
+## Try it
+
+<HealthCalculator />
+
+The calculator uses the prices you type as mid prices. The contract uses `price − conf` for collateral and `price + conf` for USDC, so its health factor comes out slightly lower.
+
+:::warning The owner can change parameters at once
+The contract owner can change a token's max LTV, liquidation threshold, and liquidation bonus at any time, and the change applies immediately to open loans too. Lowering a threshold can make a loan liquidatable without warning. Keep a margin above a health factor of 1.
+:::
+
+## Keeping a loan healthy
+
+- **Add collateral** to the loan at any time while it has debt, up to maturity + 1 hour.
+- **Repay** part of the debt, or buy notes back in the same maturity so they [net](./zero-coupon-notes.md#netting) against it.
+- **Watch the health factor** in Portfolio, especially when ETH or NEAR moves fast.
+
+Steps in the app: [Manage a loan](../guides/manage-loan.md).

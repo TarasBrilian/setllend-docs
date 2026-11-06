@@ -1,0 +1,190 @@
+/* Setllend brand: warm black, orange accent, Figtree, the same tokens as www.setllend.xyz. */
+
+:root {
+  --ifm-font-family-base: 'Figtree', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --ifm-heading-font-family: var(--ifm-font-family-base);
+  --ifm-font-family-monospace: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --ifm-color-primary: #ea580c;
+  --ifm-color-primary-dark: #d34f0b;
+  --ifm-color-primary-darker: #c74b0a;
+  --ifm-color-primary-darkest: #a43e08;
+  --ifm-color-primary-light: #f3651a;
+  --ifm-color-primary-lighter: #f46d26;
+  --ifm-color-primary-lightest: #f6864b;
+
+  --ifm-background-color: #fafaf9;
+  --ifm-background-surface-color: #ffffff;
+  --ifm-color-emphasis-300: #d6d3d1;
+  --ifm-toc-border-color: #e7e5e4;
+  --ifm-hr-border-color: #e7e5e4;
+  --ifm-code-font-size: 90%;
+  --ifm-navbar-shadow: none;
+  --docusaurus-highlighted-code-line-bg: rgba(249, 115, 22, 0.12);
+
+  --setllend-surface: #ffffff;
+  --setllend-surface-raised: #f5f5f4;
+  --setllend-line: #e7e5e4;
+  --setllend-muted: #57534e;
+  --setllend-faint: #78716c;
+}
+
+[data-theme='dark'] {
+  --ifm-color-primary: #f97316;
+  --ifm-color-primary-dark: #f86507;
+  --ifm-color-primary-darker: #ec5f07;
+  --ifm-color-primary-darkest: #c24e06;
+  --ifm-color-primary-light: #fa833a;
+  --ifm-color-primary-lighter: #fa8b46;
+  --ifm-color-primary-lightest: #fba26b;
+
+  --ifm-background-color: #0c0a09;
+  --ifm-background-surface-color: #161311;
+  --ifm-navbar-background-color: rgba(12, 10, 9, 0.85);
+  --ifm-footer-background-color: #0c0a09;
+  --ifm-color-emphasis-300: #2c2622;
+  --ifm-toc-border-color: #2c2622;
+  --ifm-hr-border-color: #2c2622;
+  --ifm-table-border-color: #2c2622;
+  --ifm-table-stripe-background: rgba(255, 255, 255, 0.02);
+  --ifm-code-background: #1f1b18;
+  --ifm-color-content: #e7e5e4;
+  --ifm-color-content-secondary: #a29a93;
+  --ifm-menu-color: #a29a93;
+  --ifm-menu-color-background-active: rgba(249, 115, 22, 0.1);
+  --ifm-menu-color-background-hover: rgba(255, 255, 255, 0.04);
+  --docusaurus-highlighted-code-line-bg: rgba(249, 115, 22, 0.15);
+
+  --setllend-surface: #161311;
+  --setllend-surface-raised: #1f1b18;
+  --setllend-line: #2c2622;
+  --setllend-muted: #a29a93;
+  --setllend-faint: #6b625b;
+}
+
+.navbar {
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--setllend-line);
+}
+
+.navbar__title {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.footer--dark {
+  border-top: 1px solid var(--setllend-line);
+}
+
+[data-theme='light'] .footer--dark {
+  --ifm-footer-background-color: #1c1917;
+}
+
+table {
+  display: table;
+  width: 100%;
+}
+
+td,
+th {
+  font-variant-numeric: tabular-nums;
+}
+
+.markdown h1:first-child {
+  letter-spacing: -0.02em;
+}
+
+/* Calculators */
+
+.calc {
+  border: 1px solid var(--setllend-line);
+  background: var(--setllend-surface);
+  border-radius: 16px;
+  padding: 1.25rem;
+  margin: 1.5rem 0;
+}
+
+.calc__title {
+  font-weight: 600;
+  margin: 0 0 1rem;
+  font-size: 1rem;
+}
+
+.calc__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 0.75rem 1rem;
+}
+
+.calc__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+  color: var(--setllend-muted);
+}
+
+.calc__field input {
+  font: inherit;
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--ifm-color-content);
+  background: var(--setllend-surface-raised);
+  border: 1px solid var(--setllend-line);
+  border-radius: 10px;
+  padding: 0.5rem 0.65rem;
+  width: 100%;
+}
+
+.calc__field input:focus {
+  outline: 2px solid var(--ifm-color-primary);
+  outline-offset: -1px;
+}
+
+.calc__section {
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--setllend-faint);
+  margin: 1rem 0 0.5rem;
+}
+
+.calc__results {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--setllend-line);
+}
+
+.calc__result {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.calc__result span {
+  font-size: 0.8rem;
+  color: var(--setllend-muted);
+}
+
+.calc__result strong {
+  font-size: 1.15rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.calc__result--good strong {
+  color: #16a34a;
+}
+
+.calc__result--bad strong {
+  color: #dc2626;
+}
+
+.calc__note {
+  margin: 0.75rem 0 0;
+  font-size: 0.8rem;
+  color: var(--setllend-faint);
+}

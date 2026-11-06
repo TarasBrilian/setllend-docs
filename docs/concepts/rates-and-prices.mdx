@@ -1,0 +1,96 @@
+---
+title: Rates and prices
+description: How Setllend quotes every order as a fixed APR in basis points, and how the contract turns that APR into a note face and a discount price.
+---
+
+import RateCalculator from '@site/src/components/calculators/RateCalculator';
+
+Every order on Setllend is quoted as a **fixed APR**, the yearly interest rate the loan pays. Lenders, borrowers, and lenders selling notes all use the same scale, so each maturity has one rate curve and one [order book](./order-book.md). The contract converts the APR into an amount of USDC only when an order fills.
+
+## APR in basis points
+
+On the wire, a rate is a whole number of **basis points** (bps). One basis point is 0.01%, so 800 means 8.00% APR and 765 means 7.65%. Because rates are whole numbers of bps, the **tick**, the smallest step between two rates, is 1 bps.
+
+| Order | Rate field | Meaning |
+|---|---|---|
+| `lend` | `min_rate_bps` | The lowest APR the lender accepts |
+| `borrow` | `max_rate_bps` | The highest APR the borrower accepts |
+| `sell_note` | `max_rate_bps` | The highest APR the seller lets the buyer earn, which sets the lowest price the seller accepts |
+
+The contract accepts any rate. There is no minimum or maximum; checked math only rejects a combination so extreme that it would overflow.
+
+## From APR to note face
+
+Setllend uses **simple interest on a 365-day year**:
+
+```
+face = principal × (1 + APR × days_to_maturity / 365)
+```
+
+- `principal` is the USDC the lender pays and the borrower receives.
+- `face` is the USDC due at maturity: the lender's note value and the borrower's debt face.
+- `days_to_maturity` is the exact time from the block in which the order fills to the maturity.
+
+Interest doesn't compound, and every year counts 365 days, leap years included. Simple interest on a 365-day year is the usual convention for zero-coupon instruments shorter than a year, it keeps the math exact in integers, and anyone can check a fill with a pocket calculator.
+
+### The exact formula in the contract
+
+The contract counts time in nanoseconds, like NEAR block timestamps, and keeps the rate in bps:
+
+```
+YEAR_NS = 365 × 24 × 3600 × 10^9
+dt      = maturity − block_timestamp        (must be greater than 0)
+
+face(principal, rate_bps) = principal × (10^4 × YEAR_NS + rate_bps × dt) / (10^4 × YEAR_NS)
+```
+
+All amounts are integers in the smallest unit of USDC (6 decimals). The division rounds in favor of the pool: the borrower's debt face rounds **up** and the lender's note value rounds **down**, so they differ by at most 0.000001 USDC and the difference stays in the maturity's redemption pool. See [Zero-coupon notes](./zero-coupon-notes.md#rounding-always-favors-the-pool).
+
+## From APR to price
+
+A note's **price** is what you pay today for 1 USDC of note value at maturity:
+
+```
+price = 1 / (1 + APR × days_to_maturity / 365)
+APR   = (1 / price − 1) × 365 / days_to_maturity
+```
+
+The price is always below 1 for a positive rate, which is why a note is said to trade at a **discount**. A higher APR means a lower price, and a lower APR a higher price.
+
+## Worked example
+
+1,000 USDC lent for 21 days at 8% APR:
+
+| Quantity | Calculation | Result |
+|---|---|---|
+| Growth factor | 1 + 0.08 × 21 / 365 | 1.004602740 |
+| Note value (rounded down) | 1,000 × 1.004602740 | **1,004.602739 USDC** |
+| Debt face (rounded up) | same, rounded up | **1,004.602740 USDC** |
+| Interest | 1,004.602739 − 1,000 | 4.602739 USDC |
+| Price of 1 USDC of note | 1 / 1.004602740 | **0.995418 USDC** |
+
+The contract's own unit test checks exactly these two amounts, `1004602739` and `1004602740` in USDC's smallest unit.
+
+## Note sales use the same scale
+
+A lender who sells notes before maturity also quotes an APR, and the buyer pays the price that APR implies for the time left. The amount of note value doesn't change in a sale, only who holds it.
+
+Say the lender above sells all 1,004.602739 USDC of notes 7 days later, with 14 days left:
+
+| APR of the sale | Price | Seller receives | Seller's result on 1,000 USDC |
+|---|---|---|---|
+| 7% (rates fell) | 0.997322 | 1,001.91 USDC | +1.91 USDC |
+| 8% (unchanged) | 0.996941 | 1,001.53 USDC | +1.53 USDC, exactly 7 days of 8% |
+| 9% (rates rose) | 0.996560 | 1,001.15 USDC | +1.15 USDC |
+
+When rates rise after you lend, your notes are worth less to a buyer than if you held them to maturity; when rates fall, they are worth more. Holding to maturity pays the full note value, unless [bad debt](./bad-debt.md) is realized in that maturity. Steps in the app: [Exit early](../guides/exit-early.md).
+
+## Try it
+
+<RateCalculator />
+
+The calculator uses days; the contract uses nanoseconds up to the maturity, so the exact face depends on the block in which the order fills. The order form in the app shows the expected "Value at maturity" (lend) or "Debt at maturity" (borrow) before you sign.
+
+## Bids, asks, and crossing in rate terms
+
+A lender's minimum rate and a borrower's maximum rate cross when `min_rate_bps` is at or below `max_rate_bps`: the lender is happy with any rate from their minimum up, the borrower with any rate up to their maximum. When they cross, the fill happens at the rate of the order that was on the book first, the **maker rate**. Priority, partial fills, and expiry are on [Order book](./order-book.md).
