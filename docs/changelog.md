@@ -5,6 +5,11 @@ description: Public, user-relevant changes to the Setllend contract, markets, ap
 
 Changes to what users and integrators see: contract deploys and upgrades, maturities, collateral tokens and their parameters, and the app and API. Every on-chain item can be checked with the contract's views; see [Verify the contract](./verify/verify-contract.md).
 
+## 2026-11-13
+
+- **API: every answer is JSON.** A path no endpoint has answers `404 {"error": "Unknown endpoint: <method> <path>. See https://docs.setllend.xyz/developers/rest-api"}` instead of a plain-text `404 Not Found`. A known path asked with the wrong method answers 405 with an `Allow` header, for example `GET /api/oneclick/quote` answers `Use POST for /api/oneclick/quote`. `GET /` answers a short index, and a plain HTTP `GET /ws` answers `426 Upgrade Required` with a pointer to the [WebSocket API](./developers/websocket-api.md). See [REST API](./developers/rest-api.md#common-errors).
+- **REST API docs list every error message** under the endpoint that gives it.
+
 ## 2026-11-06
 
 - **Setllend contract deployed on NEAR mainnet** at [`setllend.near`](https://nearblocks.io/address/setllend.near), in transaction [`DgAcsj1cjT2TnrNNt4e2hAtHauBpdaN6CYovTKpfLkPn`](https://nearblocks.io/txns/DgAcsj1cjT2TnrNNt4e2hAtHauBpdaN6CYovTKpfLkPn) (block 223274565). One transaction deployed the code, initialized the contract, opened the maturities, and listed the collateral tokens.

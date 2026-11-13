@@ -15,14 +15,17 @@ Live updates (books, trades, account events) come over the [WebSocket API](./web
 - **Timestamps and maturities** from the chain are decimal strings of **nanoseconds** since the Unix epoch (`"1795766400000000000"` is 2026-11-27 08:00 UTC). Times the backend itself records (`created_at`, `updated_at` of 1Click and withdrawal rows) are numbers of **milliseconds**.
 - **Rates** are numbers in basis points (`700` = 7.00% APR).
 - **Account IDs** must be valid NEAR account IDs: an EVM address in **lowercase** (`0x1234…abcd`), or a NEAR account (`alice.near`). A checksummed address answers `400 {"error": "account must be a valid lowercase NEAR account ID"}`.
-- **Errors** are JSON. Most endpoints answer `{"error": "<message>"}` with a 4xx or 5xx status; `POST /api/intents` always answers its own [relay body](#post-apiintents).
+- **Every answer with a body is JSON**, errors included. An error is `{"error": "<message>"}` with a 4xx or 5xx status; only `POST /api/intents` answers its own [relay body](#post-apiintents). Each endpoint lists its own errors under it, and every endpoint can also give the [common errors](#common-errors) below. An endpoint without an Errors table gives only those.
+- **Paths are exact.** A trailing slash makes another path: `/api/maturities/` answers 404.
 
 ### Common errors
 
 | Status | Body | When |
 |---|---|---|
-| 400 | `{"error": "limit must be a positive integer"}` and similar | A malformed parameter. The message names it |
-| 404 | `{"error": "Unknown maturity"}`, `{"error": "Unknown 1Click quote"}` | The resource doesn't exist |
+| 400 | `{"error": "limit must be a positive integer"}` and similar | A malformed parameter. The message names it; each endpoint's messages are listed under it |
+| 404 | `{"error": "Unknown endpoint: GET /api/markets. See https://docs.setllend.xyz/developers/rest-api"}` | No endpoint has this path. The message repeats the method and path you sent |
+| 404 | `{"error": "Unknown maturity"}`, `{"error": "Unknown 1Click quote"}` | The path is right, but the maturity or quote doesn't exist |
+| 405 | `{"error": "Use POST for /api/oneclick/quote"}`, with the header `Allow: POST` | The path exists, but not for this method. `Allow` and the message name the method to use |
 | 429 | `{"error": "Too many requests; try again in a minute"}` | A flood guard (see [Rate limits](#rate-limits)) |
 | 502 | `{"error": "Upstream error"}` | The backend's NEAR RPC call failed. Retry |
 | 503 | `{"error": "Loading"}` or `{"error": "The Setllend contract is not deployed yet"}` | The backend is starting and hasn't read the contract yet. Endpoints that read the contract answer this until `/health` shows `contract: "ready"` |
@@ -44,6 +47,14 @@ Only the endpoints that spend something are limited, per client IP and per slidi
 The read endpoints have no limit of their own. The limits protect the operator's gas and 1Click quota, not the protocol: anyone can call `execute_intents` on `intents.near` directly.
 
 ## Health
+
+### `GET /`
+
+A short index, so the base URL opened in a browser shows where to go.
+
+```json
+{ "name": "Setllend API", "docs": "https://docs.setllend.xyz/developers/rest-api", "health": "/health" }
+```
 
 ### `GET /health`
 
@@ -196,7 +207,13 @@ The order book of one maturity, aggregated into rate levels, best first. **Bids*
 }
 ```
 
-Each order is the contract's order view: `remaining` is principal for `lend` and `borrow` and shares for `sell_note`; `collateral` is the escrow left by token for a `borrow` (`{}` for a borrow against an existing loan) and `null` otherwise. An unlisted maturity answers `404 {"error": "Unknown maturity"}`. Field details: [Views](./contract/views.md).
+Each order is the contract's order view: `remaining` is principal for `lend` and `borrow` and shares for `sell_note`; `collateral` is the escrow left by token for a `borrow` (`{}` for a borrow against an existing loan) and `null` otherwise. Field details: [Views](./contract/views.md).
+
+#### Errors
+
+| Status | Body | When |
+|---|---|---|
+| 404 | `{"error": "Unknown maturity"}` | `:maturity` is not one of the listed maturities (see [`GET /api/maturities`](#get-apimaturities)), including a value that isn't a number |
 
 ### `GET /api/trades/:maturity`
 
@@ -224,7 +241,15 @@ Fills (`order_filled` events) of one maturity, newest first, each with its block
 ]
 ```
 
-`principal` is the USDC the lender paid, `face` the note value bought at the fill rate (for a `borrow` fill, the new debt is `face` or one unit more, since debt rounds up). Errors: `400 {"error": "maturity must be a u64 decimal string"}`, `400 {"error": "since must be nanoseconds"}`.
+`principal` is the USDC the lender paid, `face` the note value bought at the fill rate (for a `borrow` fill, the new debt is `face` or one unit more, since debt rounds up).
+
+#### Errors
+
+| Status | Body | When |
+|---|---|---|
+| 400 | `{"error": "maturity must be a u64 decimal string"}` | `:maturity` is not a whole number without leading zeros. A well-formed maturity that isn't listed answers `[]`, not an error |
+| 400 | `{"error": "since must be nanoseconds"}` | `since` is not a whole number of nanoseconds since the Unix epoch (a date string, for example) |
+| 400 | `{"error": "limit must be a positive integer"}` | `limit` is not a whole number of at least 1. Above 1,000 is not an error: the page is cut to 1,000 |
 
 ### `GET /api/prices`
 
@@ -290,6 +315,12 @@ Everything the contract holds for one account, plus its Intents balances.
 
 The concepts behind these fields are in [Collateral and health](../concepts/collateral-and-health.mdx) and [Zero-coupon notes](../concepts/zero-coupon-notes.md).
 
+#### Errors
+
+| Status | Body | When |
+|---|---|---|
+| 400 | `{"error": "account must be a valid lowercase NEAR account ID"}` | `:account` is not a NEAR account ID, or an EVM address with capital letters (use the lowercase address) |
+
 ### `GET /api/accounts/:account/history`
 
 Every contract event that names the account, newest first: orders placed and cancelled, fills of its orders, repayments, collateral moves, liquidations, redemptions, withdrawals from the free balance. Each event carries `seq`, `block_height`, `timestamp` (ns), and `tx_hash`.
@@ -348,6 +379,14 @@ Every contract event that names the account, newest first: orders placed and can
 
 A fill names only order IDs, so an `order_filled` row also carries `account_orders`: this account's orders in the fill, with their kind. An `order_cancelled` row carries `order`: `{kind, maturity, rate_bps}` of the cancelled order, or `null` if its placement isn't known to the backend. `next` is `"<block_height>:<seq>"` of the last row when the page is full, `null` on the last page. Every event's `data` is documented in [Events](./contract/events.md).
 
+#### Errors
+
+| Status | Body | When |
+|---|---|---|
+| 400 | `{"error": "account must be a valid lowercase NEAR account ID"}` | `:account` is not a NEAR account ID, or an EVM address with capital letters (use the lowercase address) |
+| 400 | ``{"error": "before must be the `next` value of a previous page"}`` | `before` is not a `next` value this endpoint returned |
+| 400 | `{"error": "limit must be a positive integer"}` | `limit` is not a whole number of at least 1. Above 1,000 is not an error: the page is cut to 1,000 |
+
 1Click transfers and withdrawals to a NEAR account are not contract events; they have their own lists below.
 
 ### `GET /api/accounts/:account/withdrawals`
@@ -373,6 +412,14 @@ The account's withdrawals to its own NEAR account that went through the relayer 
 
 `token` is the asset ID; a NEAR withdrawal shows as `nep141:wrap.near`, though it arrives as native NEAR. `status` is `ok`, `failed`, `error`, `sent`, or `pending`; `error` is `null` or `{code, reason}`. `sent` and `pending` mean the outcome isn't known to the backend (it follows a transaction for 10 minutes at most): check the NEAR account and the Intents balance. A withdrawal submitted to `intents.near` some other way is not listed.
 
+#### Errors
+
+| Status | Body | When |
+|---|---|---|
+| 400 | `{"error": "account must be a valid lowercase NEAR account ID"}` | `:account` is not a NEAR account ID, or an EVM address with capital letters (use the lowercase address) |
+| 400 | ``{"error": "before must be the `next` value of a previous page"}`` | `before` is not a `next` value this endpoint returned |
+| 400 | `{"error": "limit must be a positive integer"}` | `limit` is not a whole number of at least 1. Above 1,000 is not an error: the page is cut to 1,000 |
+
 ### `GET /api/accounts/:account/oneclick`
 
 The account's started 1Click quotes, newest first: those where 1Click has seen the deposit (status left `PENDING_DEPOSIT`) or has accepted the account's signature. A quote that was created but never used is not listed, because anyone can create a quote for any account. Same `before` and `limit` parameters. Rows are described under [1Click rows](#1click-rows).
@@ -380,6 +427,14 @@ The account's started 1Click quotes, newest first: those where 1Click has seen t
 ```json
 { "items": [ { "id": "0x6a75…35ee", "direction": "deposit", "status": "SUCCESS", "...": "..." } ], "next": null }
 ```
+
+#### Errors
+
+| Status | Body | When |
+|---|---|---|
+| 400 | `{"error": "account must be a valid lowercase NEAR account ID"}` | `:account` is not a NEAR account ID, or an EVM address with capital letters (use the lowercase address) |
+| 400 | ``{"error": "before must be the `next` value of a previous page"}`` | `before` is not a `next` value this endpoint returned |
+| 400 | `{"error": "limit must be a positive integer"}` | `limit` is not a whole number of at least 1. Above 1,000 is not an error: the page is cut to 1,000 |
 
 ## Signed intents (relayer)
 
@@ -518,6 +573,31 @@ Without `dry`, the quote is stored and returned as a [row](#1click-rows) with st
 - **Deposit:** send `amount_in` of the asset to `deposit_address` on `chain` from your wallet. 1Click credits the account's Intents balance. With `EXACT_OUTPUT`, `amount_in` includes the slippage buffer and 1Click refunds any excess to the refund address.
 - **Withdrawal:** the row's `intent` holds the payload to sign, `{standard, payload}`, built by 1Click and checked by the backend: exactly one `transfer` of the quoted amount to the deposit address, signed by the account, for `intents.near`. Sign it as-is (`erc191` for an EVM account with `personal_sign`, `nep413` for a NEAR account with `signMessage`, the same way as in [Signing intents](./signing-intents.mdx)), then call `submit`.
 
+#### Errors
+
+| Status | Body | When |
+|---|---|---|
+| 400 | `{"error": "body must be a JSON object"}` | The body is missing, isn't valid JSON, or is an array or a string |
+| 400 | `{"error": "account must be a valid lowercase NEAR account ID"}` | `account` is missing, not a NEAR account ID, or an EVM address with capital letters |
+| 400 | `{"error": "direction must be deposit or withdraw"}` | `direction` is missing or another value |
+| 400 | `{"error": "no 1Click route: deposit DOGE from base"}` | `asset`, `chain`, and `to` don't form a route in the [table above](#routes). The message repeats what you asked: `withdraw NEAR to base` without `to` is refused, `withdraw NEAR to base as USDC` is a route. Names are case-sensitive (`USDC`, `base`) |
+| 400 | `{"error": "amount must be a decimal string in base units"}` | `amount` is missing, a JSON number instead of a string, has a decimal point, a sign, or a leading zero, or is larger than a u128 |
+| 400 | `{"error": "amount must be positive"}` | `amount` is `"0"` |
+| 400 | `{"error": "swap_type must be EXACT_INPUT or EXACT_OUTPUT"}` | `swap_type` is another value |
+| 400 | `{"error": "a withdrawal is always EXACT_INPUT"}` | `swap_type` is `EXACT_OUTPUT` on a `withdraw` |
+| 400 | `{"error": "slippage_bps must be an integer from 0 to 10000"}` | `slippage_bps` is a string, a fraction, negative, or above 10,000 |
+| 400 | `{"error": "dry must be a boolean"}` | `dry` is a string such as `"true"` instead of `true` |
+| 400 | `{"error": "address must be a string"}` | `address` is present but not a string |
+| 400 | `{"error": "a NEAR account needs a 0x address on base"}` | A NEAR `account` without `address`: only an EVM account defaults to its own address. The message names the chain |
+| 400 | `{"error": "address must be a 0x address on base"}` | `address` is not `0x` followed by 40 hex characters |
+| 400 | `{"error": "1Click: <its message>"}` | 1Click refused the quote, for example an amount too small to bridge. Nothing is stored |
+| 429 | `{"error": "Too many requests; try again in a minute"}` | More than 60 dry quotes, or 30 stored quotes, submits, and deposit hashes together, in a minute from your IP |
+| 502 | `{"error": "1Click returned an unexpected answer"}` | 1Click answered something the backend won't pass on: also `1Click returned a quote without a deposit address`, `1Click quoted another amount than asked`, `1Click returned an unexpected payload` (a withdrawal payload that isn't exactly the quoted transfer), or `1Click refused the request`. Nothing is stored; try again later |
+| 503 | `{"error": "1Click is temporarily unavailable"}` | 1Click is down, limiting the backend, or timed out. Orders, cancels, and repayments don't depend on it |
+| 503 | `{"error": "1Click is not configured"}` | The backend runs without a 1Click key; `/health` shows `oneclick.enabled: false` |
+
+The fields are checked in the order of the 400 rows above, and only the first problem found is answered. The flood guard (429) comes before them. A dry quote is checked the same way.
+
 ### `POST /api/oneclick/:id/submit`
 
 Submits a withdrawal's stored payload with the user's signature. `:id` is the row's `id` (its deposit address).
@@ -527,17 +607,49 @@ Submits a withdrawal's stored payload with the user's signature. `:id` is the ro
 | `erc191` | `{"signature": "0x…"}` (the wallet's 65-byte signature; `v` is normalized for you) or `{"signature": "secp256k1:…"}` |
 | `nep413` | `{"signature": "ed25519:…", "public_key": "ed25519:…"}` |
 
-Answers the updated row, with `intent_hash` set. Errors: `400` for a deposit row (`only a withdrawal is signed`), a passed deadline (`the payload's deadline has passed; get a new quote`), a malformed signature, or 1Click refusing it (`1Click: <message>`, for example a bad signature or a balance too low; the row stays unsubmitted and you can sign again); `409 {"error": "this withdrawal was already submitted"}`.
+Answers the updated row, with `intent_hash` set. A NEAR account must have registered its key on `intents.near` first, as for any NEP-413 intent.
 
-A NEAR account must have registered its key on `intents.near` first, as for any NEP-413 intent.
+#### Errors
+
+| Status | Body | When |
+|---|---|---|
+| 404 | `{"error": "Unknown 1Click quote"}` | `:id` is not a stored quote. Use the `id` exactly as the quote returned it, with its capital letters |
+| 400 | `{"error": "only a withdrawal is signed"}` | `:id` is a deposit |
+| 409 | `{"error": "this withdrawal was already submitted"}` | A second submit of the same withdrawal, or one while the first is still being sent |
+| 400 | `{"error": "the payload's deadline has passed; get a new quote"}` | The signed payload expired. Ask for a new quote and sign its payload |
+| 400 | `{"error": "body must be {signature, public_key?}"}` | The body is not JSON, or `signature` is missing or not a string |
+| 400 | `{"error": "signature must be the wallet's 0x signature (65 bytes) or secp256k1:<base58>"}` | An `erc191` row with a signature in another format |
+| 400 | `{"error": "signature must be ed25519:<base58>"}` | A `nep413` row with a signature in another format |
+| 400 | `{"error": "public_key must be ed25519:<base58>"}` | A `nep413` row without `public_key`, or with one in another format |
+| 400 | `{"error": "1Click: <its message>"}` | 1Click refused the signed payload, for example a wrong signature, a key not registered on `intents.near`, or a balance too low. The row stays unsubmitted, so you can sign again |
+| 429, 502, 503 | As for a quote | See the [quote's errors](#post-apioneclickquote) |
+
 
 ### `POST /api/oneclick/:id/deposit-tx`
 
-Tells 1Click the hash of the deposit transaction, `{"tx_hash": "0x…"}` (64 hex characters, `0x` optional), so it sees the deposit sooner. Optional: 1Click finds the deposit anyway. Deposits only (`400 {"error": "only a deposit has a deposit transaction"}`); answers the row.
+Tells 1Click the hash of the deposit transaction, `{"tx_hash": "0x…"}` (64 hex characters, `0x` optional), so it sees the deposit sooner. Optional: 1Click finds the deposit anyway. Answers the row.
+
+#### Errors
+
+| Status | Body | When |
+|---|---|---|
+| 404 | `{"error": "Unknown 1Click quote"}` | `:id` is not a stored quote |
+| 400 | `{"error": "only a deposit has a deposit transaction"}` | `:id` is a withdrawal |
+| 400 | `{"error": "tx_hash must be a transaction hash"}` | The body is not JSON, or `tx_hash` is missing or not 64 hex characters |
+| 400, 429, 502, 503 | As for a quote | `1Click: <its message>` when 1Click refuses the hash; the rest as in the [quote's errors](#post-apioneclickquote) |
+
 
 ### `GET /api/oneclick/:id`
 
 The stored row. The backend polls 1Click for every open row (every 5 seconds while a swap runs, every 15 seconds in a quote's first hour, every 10 minutes after that) and stops at a final status, so this endpoint only reads the database. Changes are also pushed over the WebSocket as `type: "oneclick"`.
+
+#### Errors
+
+| Status | Body | When |
+|---|---|---|
+| 404 | `{"error": "Unknown 1Click quote"}` | `:id` is not a stored quote. A dry quote is never stored, so it has no row |
+| 405 | `{"error": "Use POST for /api/oneclick/quote"}` | `GET /api/oneclick/quote`: quotes are asked for with `POST` |
+
 
 ### 1Click rows
 
@@ -595,7 +707,7 @@ The stored row. The backend polls 1Click for every open row (every 5 seconds whi
 
 | Status | Body | When |
 |---|---|---|
-| 400 | `{"error": "no 1Click route: deposit DOGE from base"}` and other route or field messages | The request doesn't match a route or a field is malformed |
+| 400 | `{"error": "no 1Click route: deposit DOGE from base"}` and the other field messages | The request doesn't match a route or a field is malformed. Every message is listed under [`POST /api/oneclick/quote`](#post-apioneclickquote) |
 | 400 | `{"error": "1Click: <its message>"}` | 1Click refused the quote, for example an amount too small |
 | 404 | `{"error": "Unknown 1Click quote"}` | Unknown `:id` |
 | 409 | `{"error": "this withdrawal was already submitted"}` | A second submit |
