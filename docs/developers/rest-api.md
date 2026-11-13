@@ -15,7 +15,7 @@ Live updates (books, trades, account events) come over the [WebSocket API](./web
 - **Timestamps and maturities** from the chain are decimal strings of **nanoseconds** since the Unix epoch (`"1795766400000000000"` is 2026-11-27 08:00 UTC). Times the backend itself records (`created_at`, `updated_at` of 1Click and withdrawal rows) are numbers of **milliseconds**.
 - **Rates** are numbers in basis points (`700` = 7.00% APR).
 - **Account IDs** must be valid NEAR account IDs: an EVM address in **lowercase** (`0x1234…abcd`), or a NEAR account (`alice.near`). A checksummed address answers `400 {"error": "account must be a valid lowercase NEAR account ID"}`.
-- **Every answer is JSON**, errors included. An error is `{"error": "<message>"}` with a 4xx or 5xx status; only `POST /api/intents` answers its own [relay body](#post-apiintents). Each endpoint lists its own errors under it; the ones every endpoint can give are below.
+- **Every answer with a body is JSON**, errors included. An error is `{"error": "<message>"}` with a 4xx or 5xx status; only `POST /api/intents` answers its own [relay body](#post-apiintents). Each endpoint lists its own errors under it, and every endpoint can also give the [common errors](#common-errors) below. An endpoint without an Errors table gives only those.
 - **Paths are exact.** A trailing slash makes another path: `/api/maturities/` answers 404.
 
 ### Common errors
@@ -384,7 +384,7 @@ A fill names only order IDs, so an `order_filled` row also carries `account_orde
 | Status | Body | When |
 |---|---|---|
 | 400 | `{"error": "account must be a valid lowercase NEAR account ID"}` | `:account` is not a NEAR account ID, or an EVM address with capital letters (use the lowercase address) |
-| 400 | `{"error": "before must be the `next` value of a previous page"}` | `before` is not a `next` value this endpoint returned |
+| 400 | ``{"error": "before must be the `next` value of a previous page"}`` | `before` is not a `next` value this endpoint returned |
 | 400 | `{"error": "limit must be a positive integer"}` | `limit` is not a whole number of at least 1. Above 1,000 is not an error: the page is cut to 1,000 |
 
 1Click transfers and withdrawals to a NEAR account are not contract events; they have their own lists below.
@@ -417,7 +417,7 @@ The account's withdrawals to its own NEAR account that went through the relayer 
 | Status | Body | When |
 |---|---|---|
 | 400 | `{"error": "account must be a valid lowercase NEAR account ID"}` | `:account` is not a NEAR account ID, or an EVM address with capital letters (use the lowercase address) |
-| 400 | `{"error": "before must be the `next` value of a previous page"}` | `before` is not a `next` value this endpoint returned |
+| 400 | ``{"error": "before must be the `next` value of a previous page"}`` | `before` is not a `next` value this endpoint returned |
 | 400 | `{"error": "limit must be a positive integer"}` | `limit` is not a whole number of at least 1. Above 1,000 is not an error: the page is cut to 1,000 |
 
 ### `GET /api/accounts/:account/oneclick`
@@ -433,7 +433,7 @@ The account's started 1Click quotes, newest first: those where 1Click has seen t
 | Status | Body | When |
 |---|---|---|
 | 400 | `{"error": "account must be a valid lowercase NEAR account ID"}` | `:account` is not a NEAR account ID, or an EVM address with capital letters (use the lowercase address) |
-| 400 | `{"error": "before must be the `next` value of a previous page"}` | `before` is not a `next` value this endpoint returned |
+| 400 | ``{"error": "before must be the `next` value of a previous page"}`` | `before` is not a `next` value this endpoint returned |
 | 400 | `{"error": "limit must be a positive integer"}` | `limit` is not a whole number of at least 1. Above 1,000 is not an error: the page is cut to 1,000 |
 
 ## Signed intents (relayer)
@@ -581,7 +581,7 @@ Without `dry`, the quote is stored and returned as a [row](#1click-rows) with st
 | 400 | `{"error": "account must be a valid lowercase NEAR account ID"}` | `account` is missing, not a NEAR account ID, or an EVM address with capital letters |
 | 400 | `{"error": "direction must be deposit or withdraw"}` | `direction` is missing or another value |
 | 400 | `{"error": "no 1Click route: deposit DOGE from base"}` | `asset`, `chain`, and `to` don't form a route in the [table above](#routes). The message repeats what you asked: `withdraw NEAR to base` without `to` is refused, `withdraw NEAR to base as USDC` is a route. Names are case-sensitive (`USDC`, `base`) |
-| 400 | `{"error": "amount must be a decimal string in base units"}` | `amount` is missing, a JSON number instead of a string, has a decimal point or a sign, or is larger than a u128 |
+| 400 | `{"error": "amount must be a decimal string in base units"}` | `amount` is missing, a JSON number instead of a string, has a decimal point, a sign, or a leading zero, or is larger than a u128 |
 | 400 | `{"error": "amount must be positive"}` | `amount` is `"0"` |
 | 400 | `{"error": "swap_type must be EXACT_INPUT or EXACT_OUTPUT"}` | `swap_type` is another value |
 | 400 | `{"error": "a withdrawal is always EXACT_INPUT"}` | `swap_type` is `EXACT_OUTPUT` on a `withdraw` |
@@ -596,7 +596,7 @@ Without `dry`, the quote is stored and returned as a [row](#1click-rows) with st
 | 503 | `{"error": "1Click is temporarily unavailable"}` | 1Click is down, limiting the backend, or timed out. Orders, cancels, and repayments don't depend on it |
 | 503 | `{"error": "1Click is not configured"}` | The backend runs without a 1Click key; `/health` shows `oneclick.enabled: false` |
 
-The fields are checked in the order of this table, and the first problem found is the one answered. A dry quote is checked the same way.
+The fields are checked in the order of the 400 rows above, and only the first problem found is answered. The flood guard (429) comes before them. A dry quote is checked the same way.
 
 ### `POST /api/oneclick/:id/submit`
 

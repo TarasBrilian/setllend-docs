@@ -7,6 +7,8 @@ The backend pushes changes over a WebSocket so a client doesn't have to poll the
 
 **URL:** `wss://setllend-production.up.railway.app/ws`
 
+The URL takes WebSocket connections only. A plain HTTP `GET`, for example the URL opened in a browser or fetched with `curl`, answers `426 Upgrade Required` with the header `Upgrade: websocket` and `{"error": "/ws is a WebSocket endpoint: connect with a WebSocket client (wss://). See https://docs.setllend.xyz/developers/websocket-api"}`. Another method answers 405, as in the [REST API](./rest-api.md#common-errors).
+
 ## Subscribing
 
 Send one JSON object with a `subscribe` list:
